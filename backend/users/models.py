@@ -5,7 +5,7 @@ from django.conf import settings
 
 class CustomUser(AbstractUser):
     email = models.EmailField(unique=True)
-    avatar = models.ImageField(upload_to=settings.MEDIA_DIR + '/users/',
+    avatar = models.ImageField(upload_to='users/',
                                blank=True, null=True)
 
     USERNAME_FIELD = 'email'

@@ -3,6 +3,7 @@ services:
 
   frontend:
     container_name: foodgram-front
+    image: cmoild/foodgram-front:latest
     build: ../frontend
     volumes:
       - ../frontend/:/app/result_build/
@@ -15,3 +16,35 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
       - ../frontend/build:/usr/share/nginx/html/
       - ../docs/:/usr/share/nginx/html/api/docs/
+      - media_volume:/media/
+      - static_volume:/static/
+    command: /bin/sh -c "cp -r /static/* /usr/share/nginx/html/static/ && nginx -g 'daemon off;'"
+  db:
+    image: postgres:16
+    container_name: foodgram-postgres
+    restart: always
+    env_file:
+      - ../backend/.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: cmoild/foodgram-backend:latest
+    env_file:
+      - ../backend/.env
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+    volumes:
+      - media_volume:/app/media/
+      - static_volume:/app/static/
+
+volumes:
+  postgres_data:
+  media_volume:
+  static_volume:

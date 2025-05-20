@@ -4,6 +4,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import NotFound
 from django.shortcuts import redirect
+from django.http import HttpResponse
 
 from .models import (
     Recipe, Ingredient, ShoppingCart, RecipeIngredient, Favorite
@@ -72,7 +73,7 @@ class RecipeShortLinkRedirectView(views.APIView):
     def get(self, request, short_code):
         try:
             recipe_id = int(short_code, 16)
-            return redirect('recipe-detail', pk=recipe_id)
+            return redirect(f'/recipes/{recipe_id}')
         except NotFound:
             raise NotFound('Not found')
 
@@ -151,8 +152,7 @@ class DownloadShoppingCartView(views.APIView):
                 else:
                     data[name] += obj.amount
         output = '\n'.join([f'* {n} - {data[n]}' for n in data.keys()])
-        return Response(output,
-                        status=status.HTTP_200_OK, content_type='text/plain')
+        return HttpResponse(output, content_type='text/plain', status=200)
 
 
 class FavoriteView(views.APIView):

@@ -18,7 +18,7 @@ class Recipe(models.Model):
         related_name='author'
     )
     image = models.ImageField(
-        upload_to=settings.MEDIA_DIR + '/recipes/', blank=False,
+        upload_to='recipes/', blank=False,
         null=False, name='image'
     )
     name = models.CharField(
