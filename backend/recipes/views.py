@@ -5,8 +5,10 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import NotFound
 from django.shortcuts import redirect
 from django.http import HttpResponse
+from django.db.models import Sum, F, Value, CharField
+from django.db.models.functions import Concat
 
-from .models import (
+from recipes_models.models import (
     Recipe, Ingredient, ShoppingCart, RecipeIngredient, Favorite
 )
 from .serializers import (
@@ -14,6 +16,10 @@ from .serializers import (
     RecipeShortSerializer
 )
 from .permissions import IsAuthorOrReadOnly
+
+
+HEXADECIMAL_NUMBER_STRING_REPRESENTATION_STARTING_INDEX = 2
+HEXADECIMAL_NUMBER_BASE = 16
 
 
 class StandardPagination(PageNumberPagination):
@@ -36,10 +42,11 @@ class RecipeViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(author_id=author_id)
 
         if params.get('is_favorited') == '1' and user.is_authenticated:
-            queryset = queryset.filter(favorite__author=user).distinct()
+            queryset = queryset.filter(
+                favorite_recipes__author=user).distinct()
 
         if params.get('is_in_shopping_cart') == '1' and user.is_authenticated:
-            queryset = queryset.filter(shoppingcart__author=user).distinct()
+            queryset = queryset.filter(shopping_cart__author=user).distinct()
 
         return queryset
 
@@ -60,7 +67,9 @@ class RecipeShortLinkView(generics.RetrieveAPIView):
 
     def retrieve(self, request, *args, **kwargs):
         recipe = self.get_object()
-        short_code = hex(recipe.id)[2:]
+        short_code = hex(
+            recipe.id
+        )[HEXADECIMAL_NUMBER_STRING_REPRESENTATION_STARTING_INDEX:]
         short_url = request.build_absolute_uri(f'/s/{short_code}/')
         return Response({
             "short-link": short_url
@@ -72,7 +81,7 @@ class RecipeShortLinkRedirectView(views.APIView):
 
     def get(self, request, short_code):
         try:
-            recipe_id = int(short_code, 16)
+            recipe_id = int(short_code, HEXADECIMAL_NUMBER_BASE)
             return redirect(f'/recipes/{recipe_id}')
         except NotFound:
             raise NotFound('Not found')
@@ -104,8 +113,7 @@ class ShoppingCartView(views.APIView):
     def post(self, request, pk):
         recipe = get_object_or_404(Recipe, pk=pk)
 
-        if (ShoppingCart.objects.filter(author=request.user,
-                                        recipe=recipe).exists()):
+        if request.user.shopping_cart.filter(recipe=recipe).exists():
             return Response(
                 {"errors": 'Recipe is already in shopping cart'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -120,10 +128,7 @@ class ShoppingCartView(views.APIView):
 
     def delete(self, request, pk):
         recipe = get_object_or_404(Recipe, pk=pk)
-        cart_item = ShoppingCart.objects.filter(
-            author=request.user,
-            recipe=recipe
-        ).first()
+        cart_item = request.user.shopping_cart.filter(recipe=recipe).first()
 
         if not cart_item:
             return Response(
@@ -139,20 +144,26 @@ class DownloadShoppingCartView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        shopping_cart = ShoppingCart.objects.filter(author=request.user)
-        data = {}
-        for item in shopping_cart:
-            ingredient_amount = RecipeIngredient.objects.filter(
-                recipe=item.recipe)
-            for obj in ingredient_amount:
-                mu = obj.ingredient.measurement_unit
-                name = f'{obj.ingredient.name} ({mu})'
-                if name not in data.keys():
-                    data[name] = obj.amount
-                else:
-                    data[name] += obj.amount
-        output = '\n'.join([f'* {n} - {data[n]}' for n in data.keys()])
-        return HttpResponse(output, content_type='text/plain', status=200)
+        ingredients = RecipeIngredient.objects.filter(
+            recipe__shopping_cart__author=request.user
+        ).values(
+            name=Concat(
+                F('ingredient__name'),
+                Value(' ('),
+                F('ingredient__measurement_unit'),
+                Value(')'),
+                output_field=CharField()
+            )
+        ).annotate(
+            total=Sum('amount')
+        ).order_by('name')
+
+        output = '\n'.join(
+            f"* {item['name']} - {item['total']}" for item in ingredients
+        )
+
+        return HttpResponse(output, content_type='text/plain',
+                            status=status.HTTP_200_OK)
 
 
 class FavoriteView(views.APIView):
@@ -161,8 +172,7 @@ class FavoriteView(views.APIView):
     def post(self, request, pk):
         recipe = get_object_or_404(Recipe, pk=pk)
 
-        if Favorite.objects.filter(author=request.user,
-                                   recipe=recipe).exists():
+        if request.user.favorites.filter(recipe=recipe).exists():
             return Response(
                 {"errors": "Рецепт уже в списке покупок"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -177,10 +187,7 @@ class FavoriteView(views.APIView):
 
     def delete(self, request, pk):
         recipe = get_object_or_404(Recipe, pk=pk)
-        cart_item = Favorite.objects.filter(
-            author=request.user,
-            recipe=recipe
-        ).first()
+        cart_item = request.user.favorites.filter(recipe=recipe).first()
 
         if not cart_item:
             return Response(

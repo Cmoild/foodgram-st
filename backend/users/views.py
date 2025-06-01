@@ -8,11 +8,12 @@ from rest_framework.pagination import PageNumberPagination
 import base64
 import uuid
 
-from .models import CustomUser, Subscription
+from users_models.models import CustomUser
 from .serializers import (
     UserListSerializer,
     UserCreateSerializer,
     SubscriptionUserSerializer,
+    SubscriptionCreateSerializer
 )
 
 
@@ -55,7 +56,10 @@ class AvatarUploadView(APIView):
         avatar_base64 = request.data.get('avatar')
 
         if not avatar_base64:
-            return Response({'avatar': ['This field is required']}, status=400)
+            return Response(
+                {'avatar': ['This field is required']},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         try:
             format, imgstr = avatar_base64.split(';base64,')
@@ -63,7 +67,10 @@ class AvatarUploadView(APIView):
             file_name = f'{uuid.uuid4()}.{ext}'
             data = ContentFile(base64.b64decode(imgstr), name=file_name)
         except Exception:
-            return Response({'avatar': ['Invalid image format']}, status=400)
+            return Response(
+                {'avatar': ['Invalid image format']},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         user = request.user
         user.avatar = data
@@ -92,30 +99,28 @@ class SubscribeView(APIView):
 
     def post(self, request, id):
         author = get_object_or_404(CustomUser, id=id)
-        user = request.user
-
-        if author == user:
-            return Response(
-                {'detail': 'You cannot subscribe to yourself'}, status=400)
-
-        if Subscription.objects.filter(user=user, author=author).exists():
-            return Response(
-                {'detail': 'You are already subscribed to this user'},
-                status=400)
-
-        Subscription.objects.create(user=user, author=author)
-        serializer = SubscriptionUserSerializer(author,
-                                                context={'request': request})
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        serializer = SubscriptionCreateSerializer(
+            data={'author': author.id},
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        subscription = serializer.save()
+        response_serializer = SubscriptionUserSerializer(
+            subscription.author, context={'request': request}
+        )
+        return Response(response_serializer.data,
+                        status=status.HTTP_201_CREATED)
 
     def delete(self, request, id):
         author = get_object_or_404(CustomUser, id=id)
         user = request.user
-        subscription = Subscription.objects.filter(user=user, author=author)
+        subscription = user.follower.filter(author=author)
 
         if subscription.exists():
             subscription.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         return Response(
-            {'detail': 'You are not subscribed to this user'}, status=400)
+            {'detail': 'You are not subscribed to this user'},
+            status=status.HTTP_400_BAD_REQUEST
+        )

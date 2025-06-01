@@ -1,6 +1,6 @@
 from rest_framework import serializers
-from .models import CustomUser, Subscription
-from recipes.models import Recipe
+from users_models.models import CustomUser, Subscription
+from recipes_models.models import Recipe
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
@@ -35,17 +35,21 @@ class UserListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ('id', 'email', 'username', 'first_name',
-                  'last_name', 'is_subscribed', 'avatar')
+        fields = (
+            'id', 'email', 'username', 'first_name',
+            'last_name', 'is_subscribed', 'avatar'
+        )
 
     def get_is_subscribed(self, obj):
-        user = self.context.get('request').user
+        request = self.context['request']
+        user = request.user
+
         if user.is_authenticated:
-            return Subscription.objects.filter(user=user, author=obj).exists()
+            return user.follower.filter(author=obj).exists()
         return False
 
     def get_avatar(self, obj):
-        request = self.context.get('request')
+        request = self.context['request']
         if obj.avatar and hasattr(obj.avatar, 'url'):
             return request.build_absolute_uri(obj.avatar.url)
         return None
@@ -65,12 +69,10 @@ class SubscriptionUserSerializer(UserListSerializer):
         fields = UserListSerializer.Meta.fields + ('recipes', 'recipes_count')
 
     def get_recipes(self, obj):
-        request = self.context.get('request')
-        recipes_limit = (
-            request.query_params.get('recipes_limit') if request else None
-        )
+        request = self.context['request']
+        recipes_limit = request.query_params.get('recipes_limit')
 
-        recipes_qs = Recipe.objects.filter(author=obj)
+        recipes_qs = obj.author.all()
         if recipes_limit is not None:
             try:
                 limit = int(recipes_limit)
@@ -82,4 +84,34 @@ class SubscriptionUserSerializer(UserListSerializer):
                                      many=True, context=self.context).data
 
     def get_recipes_count(self, obj):
-        return Recipe.objects.filter(author=obj).count()
+        return obj.author.count()
+
+
+class SubscriptionCreateSerializer(serializers.ModelSerializer):
+    author = serializers.PrimaryKeyRelatedField(
+        queryset=CustomUser.objects.all()
+    )
+
+    class Meta:
+        model = Subscription
+        fields = ('author',)
+
+    def validate_author(self, value):
+        user = self.context['request'].user
+
+        if value == user:
+            raise serializers.ValidationError(
+                'You cannot subscribe to yourself.'
+            )
+
+        if user.follower.filter(author=value).exists():
+            raise serializers.ValidationError(
+                'You are already subscribed to this user.'
+            )
+
+        return value
+
+    def create(self, validated_data):
+        user = self.context['request'].user
+        author = validated_data['author']
+        return Subscription.objects.create(user=user, author=author)

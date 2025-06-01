@@ -56,20 +56,24 @@ class RecipeIngredient(models.Model):
 class ShoppingCart(models.Model):
     recipe = models.ForeignKey(
         Recipe, on_delete=models.CASCADE,
-        blank=False, null=False
+        blank=False, null=False,
+        related_name='shopping_cart'
     )
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-        blank=False, null=False
+        blank=False, null=False,
+        related_name='shopping_cart'
     )
 
 
 class Favorite(models.Model):
     recipe = models.ForeignKey(
         Recipe, on_delete=models.CASCADE,
-        blank=False, null=False
+        blank=False, null=False,
+        related_name='favorite_recipes'
     )
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-        blank=False, null=False
+        blank=False, null=False,
+        related_name='favorites'
     )
